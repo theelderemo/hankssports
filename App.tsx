@@ -4,7 +4,7 @@ import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { NewsFeed } from './components/NewsFeed';
 import { ChatWidget } from './components/ChatWidget';
-import { SpinnerIcon } from './components/icons/SpinnerIcon';
+// SpinnerIcon is no longer used directly here for news loading
 import { fetchNewsArticles, fetchHourlySummary, initializeGeminiService } from './services/geminiService';
 import type { NewsArticle, GroundingSource } from './types';
 import { DEFAULT_HOURLY_SUMMARY, DEFAULT_NEWS_ARTICLES, API_KEY_ERROR_MESSAGE, GENERAL_ERROR_MESSAGE } from './constants';
@@ -28,7 +28,7 @@ const App: React.FC = () => {
       setNewsError(API_KEY_ERROR_MESSAGE);
       setIsNewsLoading(false);
       setHourlySummary("API Key missing. News summary unavailable.");
-      setAllNewsArticles([]);
+      setAllNewsArticles(DEFAULT_NEWS_ARTICLES);
     } else {
       setApiKey(key);
       setApiKeyValid(true); 
@@ -124,23 +124,15 @@ const App: React.FC = () => {
               <p>{API_KEY_ERROR_MESSAGE} Features requiring the API (News Feed, Chat) will use placeholder content or show errors.</p>
             </div>
           )}
-          {isNewsLoading && apiKeyValid && ( 
-            <div className="flex flex-col items-center justify-center h-64 bg-slate-800 rounded-lg p-6 shadow-xl">
-              <SpinnerIcon className="h-12 w-12 text-blue-400" />
-              <p className="mt-4 text-xl font-semibold text-slate-300">Loading sports news feed...</p>
-            </div>
-          )}
-          {/* Render NewsFeed if not initial loading (spinner shown above) OR if API key is invalid (to show its internal placeholders/errors) */}
-          {(!isNewsLoading || !apiKeyValid) && (
-            <NewsFeed
-              apiKeyValid={apiKeyValid}
-              hourlySummary={hourlySummary}
-              articles={allNewsArticles} // Pass ALL fetched articles
-              globalGroundingSources={globalGroundingSources}
-              isLoading={isNewsLoading} // Pass loading state for NewsFeed internal use if any
-              error={newsError} 
-            />
-          )}
+          {/* NewsFeed is always rendered. It will handle its own loading/error/content display via props */}
+          <NewsFeed
+            apiKeyValid={apiKeyValid}
+            hourlySummary={hourlySummary}
+            articles={allNewsArticles}
+            globalGroundingSources={globalGroundingSources}
+            isLoading={isNewsLoading && apiKeyValid} // NewsFeed shows skeletons if this is true
+            error={newsError} 
+          />
         </div>
       </main>
       <Footer />
