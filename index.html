@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hank's Sports Central</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Initialize process.env.API_KEY for development if not set by an external mechanism
+      // In a real deployment, this would be set through environment variables by the hosting platform.
+      // DO NOT commit actual API keys to version control. This is for demonstration/local dev only.
+      if (typeof process === 'undefined') {
+        window.process = { env: {} };
+      }
+      // You can set a test key here for local development if you don't have it in your environment
+      // For example: process.env.API_KEY = "YOUR_GEMINI_API_KEY"; 
+      // Ensure this is NOT done in production builds or committed.
+      if (!process.env.API_KEY) {
+        // console.warn("API_KEY is not set in process.env. You may need to set it for the app to function fully.");
+        // To make the app runnable without manually editing, you can provide a placeholder or a test key here.
+        // However, for security, it's best to configure this in your local environment.
+        // For this example, if it's not set, the app will show an API key error as intended.
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.5.1"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-slate-900">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
