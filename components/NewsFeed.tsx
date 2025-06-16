@@ -4,13 +4,15 @@ import { NewsArticle, GroundingSource, NewsCategory, TeamFocus } from '../types'
 import { NewsArticleCard } from './NewsArticleCard';
 import { NEWS_FILTER_CATEGORIES, NEWS_FILTER_TEAMS, DEFAULT_NEWS_ARTICLES, INITIAL_ARTICLES_DISPLAY_COUNT, ARTICLES_PER_LOAD } from '../constants';
 import { LinkIcon } from './icons/LinkIcon';
+import { HourlySummarySkeleton } from './skeletons/HourlySummarySkeleton';
+import { NewsArticleCardSkeleton } from './skeletons/NewsArticleCardSkeleton';
 
 interface NewsFeedProps {
   apiKeyValid: boolean;
   hourlySummary: string;
-  articles: NewsArticle[]; // This is all fetched articles
+  articles: NewsArticle[]; 
   globalGroundingSources: GroundingSource[];
-  isLoading: boolean; // True during initial fetch from App.tsx
+  isLoading: boolean; 
   error: string | null;
 }
 
@@ -27,7 +29,6 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({ apiKeyValid, hourlySummary, 
     });
   }, [articles, activeCategoryFilter, activeTeamFilter]);
 
-  // Reset displayed count when filters change
   useEffect(() => {
     setDisplayedCount(INITIAL_ARTICLES_DISPLAY_COUNT);
   }, [activeCategoryFilter, activeTeamFilter]);
@@ -40,7 +41,46 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({ apiKeyValid, hourlySummary, 
     setDisplayedCount(prevCount => Math.min(prevCount + ARTICLES_PER_LOAD, filteredArticles.length));
   };
 
-  if (error && !isLoading && apiKeyValid) {
+  //Skeleton Loader display
+  if (isLoading && apiKeyValid) { // isLoading is true when App.tsx is fetching and API key is good
+    return (
+      <div className="space-y-8 animate-pulse">
+        <HourlySummarySkeleton />
+        {/* Skeleton for Filter Section */}
+        <section className="bg-slate-800 p-6 rounded-lg shadow-xl">
+          <div className="mb-6">
+            <div className="h-6 w-1/3 bg-slate-700 rounded mb-3"></div> {/* Filter title placeholder */}
+            <div className="flex flex-wrap gap-2">
+              {[...Array(4)].map((_, i) => <div key={i} className="h-10 w-24 bg-slate-700 rounded-md"></div>)}
+            </div>
+          </div>
+          <div>
+            <div className="h-6 w-1/3 bg-slate-700 rounded mb-3"></div> {/* Filter title placeholder */}
+            <div className="flex flex-wrap gap-2">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-10 w-24 bg-slate-700 rounded-md"></div>)}
+            </div>
+          </div>
+        </section>
+        {/* Skeleton for News Articles */}
+        <section>
+          <div className="space-y-6">
+            {[...Array(3)].map((_, index) => <NewsArticleCardSkeleton key={index} />)}
+          </div>
+        </section>
+         {/* Skeleton for Grounding Sources (optional, can be simpler) */}
+        <section className="bg-slate-800 p-6 rounded-lg shadow-xl">
+            <div className="h-7 w-1/2 bg-slate-700 rounded mb-3"></div> {/* Title placeholder */}
+            <div className="h-4 w-full bg-slate-700 rounded mb-4"></div> {/* Description placeholder */}
+            <div className="space-y-2">
+                {[...Array(2)].map((_, i) => <div key={i} className="h-5 w-3/4 bg-slate-700 rounded"></div>)}
+            </div>
+        </section>
+      </div>
+    );
+  }
+
+  // Error display (if not loading and API key is valid but there's an error)
+  if (error && apiKeyValid) { // Removed !isLoading as it's covered by the above skeleton block
     return (
       <div className="bg-slate-800 p-6 rounded-lg shadow-xl text-center">
         <h2 className="text-2xl font-bold text-red-400 mb-2">Error Loading News</h2>
@@ -49,7 +89,8 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({ apiKeyValid, hourlySummary, 
       </div>
     );
   }
-  // Note: The main loading spinner for initial load is handled in App.tsx
+  // Note: API Key error message is handled by a banner in App.tsx. 
+  // NewsFeed will show default/placeholder content if apiKeyValid is false.
 
   return (
     <div className="space-y-8">
@@ -110,23 +151,19 @@ export const NewsFeed: React.FC<NewsFeedProps> = ({ apiKeyValid, hourlySummary, 
             ))}
           </div>
         ) : (
-          // This block is for when NO articles are rendered in the list
-          // isLoading prop here refers to the initial load state from App.tsx.
-          // If App.tsx shows a spinner, this NewsFeed component might not even be rendered, or isLoading will be false.
           <div className="bg-slate-800 p-6 rounded-lg shadow-xl text-center">
             <p className="text-slate-300 text-lg">
-              {!isLoading && !apiKeyValid && articles === DEFAULT_NEWS_ARTICLES ? "News feed is showing placeholder content due to an API Key issue. Filters are disabled." :
-               !isLoading && apiKeyValid && articles.length === 0 && !error ? "No news articles to display at the moment from the source." :
-               !isLoading && apiKeyValid && filteredArticles.length === 0 && articles.length > 0 && !error ? "No news articles match your current filters." :
-               !isLoading && apiKeyValid && !error ? "No news articles to show. Try changing filters or refreshing." : // Fallback when not loading, key valid, no error, but still empty
-               isLoading && apiKeyValid ? "Loading news..." : // Should be covered by App.tsx spinner, but as a fallback
-               "No news articles to show." // General fallback
+              {/* Logic for empty states, considering API validity and filters */}
+              {!apiKeyValid && articles === DEFAULT_NEWS_ARTICLES ? "News feed is showing placeholder content due to an API Key issue. Filters are disabled." :
+               apiKeyValid && articles.length === 0 && !error ? "No news articles to display at the moment from the source." :
+               apiKeyValid && filteredArticles.length === 0 && articles.length > 0 && !error ? "No news articles match your current filters." :
+               "No news articles to show. Try changing filters or refreshing." 
               }
             </p>
           </div>
         )}
-        {/* Load More Button: Show if not initial loading, API key is valid, and there are more filtered articles to display */}
-        {!isLoading && apiKeyValid && filteredArticles.length > displayedCount && (
+        {/* Load More Button: Show if API key is valid, and there are more filtered articles to display */}
+        {apiKeyValid && filteredArticles.length > displayedCount && (
           <div className="mt-8 text-center">
             <button
               onClick={handleLoadMore}
