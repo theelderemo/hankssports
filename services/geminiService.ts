@@ -1,7 +1,7 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import type { GenerateContentResponse, Chat, Tool, GenerateContentParameters } from "@google/genai";
 import { NewsArticle, GroundingSource, FetchNewsArticlesResponse, GenerateContentResponseText, TeamFocus, NewsCategory } from '../types'; // Changed from import type for enums
-import { GEMINI_TEXT_MODEL, NEWS_FETCH_PROMPT, HOURLY_SUMMARY_PROMPT, DEFAULT_NEWS_ARTICLES, DEFAULT_HOURLY_SUMMARY, API_KEY_ERROR_MESSAGE } from '../constants';
+import { GEMINI_TEXT_MODEL, NEWS_FETCH_PROMPT, HOURLY_SUMMARY_PROMPT, DEFAULT_NEWS_ARTICLES, DEFAULT_HOURLY_SUMMARY, API_KEY_ERROR_MESSAGE, CHAT_SYSTEM_INSTRUCTION } from '../constants';
 
 let ai: GoogleGenAI | null = null;
 let currentApiKeyService: string | null = null; 
@@ -81,13 +81,16 @@ export const fetchHourlySummary = async (): Promise<GenerateContentResponseText>
   }
 
   try {
+    // Per Gemini guidelines, if tools: [{googleSearch: {}}] is used,
+    // other configs like safetySettings or thinkingConfig should be omitted to avoid potential issues.
+    const config: GenerateContentParameters['config'] = {
+        tools: [{googleSearch: {}}]
+    };
+
     const response: GenerateContentResponse = await localAi.models.generateContent({
       model: GEMINI_TEXT_MODEL,
       contents: HOURLY_SUMMARY_PROMPT,
-      config: {
-        tools: [{googleSearch: {}}],
-        safetySettings: ALL_SAFETY_SETTINGS_BLOCK_NONE
-      }
+      config: config
     });
 
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
@@ -104,7 +107,11 @@ export const fetchHourlySummary = async (): Promise<GenerateContentResponseText>
     if (error.message && (error.message.includes('[GoogleGenerativeAI Error]: API key not valid') || error.message.includes("API_KEY_INVALID"))) {
          throw new ApiKeyInvalidError(API_KEY_ERROR_MESSAGE);
     }
-    return { text: `${DEFAULT_HOURLY_SUMMARY} (Error: ${error.message || 'Unknown error fetching summary'})`, sources: [] };
+    // Check for specific Gemini API error structure if available
+    const errorDetails = (error as any)?.error || (error as any)?.toJSON?.() || error;
+    const errorMessage = errorDetails?.message || (error as Error).message || 'Unknown error fetching summary';
+    console.error("Detailed error object for hourly summary:", JSON.stringify(errorDetails, null, 2));
+    return { text: `${DEFAULT_HOURLY_SUMMARY} (Error: ${errorMessage})`, sources: [] };
   }
 };
 
@@ -118,13 +125,16 @@ export const fetchNewsArticles = async (): Promise<FetchNewsArticlesResponse> =>
   }
 
   try {
+    // Per Gemini guidelines, if tools: [{googleSearch: {}}] is used,
+    // other configs like safetySettings or thinkingConfig should be omitted.
+     const config: GenerateContentParameters['config'] = {
+        tools: [{googleSearch: {}}]
+    };
+
     const response: GenerateContentResponse = await localAi.models.generateContent({
       model: GEMINI_TEXT_MODEL,
       contents: NEWS_FETCH_PROMPT,
-      config: {
-        tools: [{googleSearch: {}}],
-        safetySettings: ALL_SAFETY_SETTINGS_BLOCK_NONE
-      }
+      config: config
     });
 
     const parsedArticles = parseJsonFromString<any[]>(response.text);
@@ -167,25 +177,36 @@ export const fetchNewsArticles = async (): Promise<FetchNewsArticlesResponse> =>
 
 export const initializeChatSession = async (
     modelName: string, 
-    systemInstruction: string,
-    tools?: Tool[],
-    thinkingConfig?: GenerateContentParameters['config']['thinkingConfig']
+    systemInstructionText: string, // Renamed for clarity from systemInstruction in constants
+    toolsList?: Tool[], // Renamed for clarity
+    thinkingConfigSettings?: GenerateContentParameters['config']['thinkingConfig'] // Renamed
     ): Promise<Chat> => {
   const localAi = getAiInstance(); 
   
-  const config: GenerateContentParameters['config'] = {
-      systemInstruction,
-      safetySettings: ALL_SAFETY_SETTINGS_BLOCK_NONE
+  const chatConfig: GenerateContentParameters['config'] = {
+      systemInstruction: systemInstructionText,
   };
-  if (tools) config.tools = tools;
-  if (thinkingConfig && modelName === "gemini-2.5-flash-preview-04-17") { 
-    config.thinkingConfig = thinkingConfig;
+
+  const usesGoogleSearch = toolsList?.some(tool => tool.googleSearch);
+
+  if (usesGoogleSearch) {
+    chatConfig.tools = toolsList;
+    // Do NOT add safetySettings or thinkingConfig if googleSearch is active, per guidelines
+  } else {
+    // Only add these if googleSearch is NOT active
+    chatConfig.safetySettings = ALL_SAFETY_SETTINGS_BLOCK_NONE;
+    if (thinkingConfigSettings && modelName === "gemini-2.5-flash-preview-04-17") { 
+      chatConfig.thinkingConfig = thinkingConfigSettings;
+    }
+    if(toolsList) { // Add tools if they exist and googleSearch wasn't the reason to add them above
+        chatConfig.tools = toolsList;
+    }
   }
   
   try {
     const chat: Chat = localAi.chats.create({
       model: modelName,
-      config: config,
+      config: chatConfig,
     });
     return chat;
   } catch (error: any) {
@@ -204,9 +225,8 @@ export const sendMessageToChatSdk = async (chat: Chat, messageText: string): Pro
   }
 
   try {
-    // Note: safetySettings for chat are typically set at session initialization.
-    // If they could be overridden per message, it would be in chat.sendMessage options.
-    // However, the common practice is session-level for chat.
+    // Safety settings and other major configs are part of the chat session initialization.
+    // sendMessage typically doesn't re-specify these, but relies on the session's configuration.
     const result: GenerateContentResponse = await chat.sendMessage({ message: messageText });
     
     const sources: GroundingSource[] = result.candidates?.[0]?.groundingMetadata?.groundingChunks
@@ -217,7 +237,8 @@ export const sendMessageToChatSdk = async (chat: Chat, messageText: string): Pro
       .filter(source => source.uri) || [];
     
     return { text: result.text, sources };
-  } catch (error: any) {
+  } catch (error: any)
+ {
     console.error("Error sending message to Gemini chat:", error);
     if (error.message && (error.message.includes('[GoogleGenerativeAI Error]: API key not valid') || error.message.includes("API_KEY_INVALID"))) {
          throw new ApiKeyInvalidError(API_KEY_ERROR_MESSAGE);
