@@ -1,11 +1,10 @@
-
-import { GoogleGenAI } from "@google/genai";
-import type { GenerateContentResponse, Chat, Tool, GenerateContentParameters } from "@google/genai"; // Removed Part as it's not directly used.
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import type { GenerateContentResponse, Chat, Tool, GenerateContentParameters } from "@google/genai";
 import { NewsArticle, GroundingSource, FetchNewsArticlesResponse, GenerateContentResponseText, TeamFocus, NewsCategory } from '../types'; // Changed from import type for enums
 import { GEMINI_TEXT_MODEL, NEWS_FETCH_PROMPT, HOURLY_SUMMARY_PROMPT, DEFAULT_NEWS_ARTICLES, DEFAULT_HOURLY_SUMMARY, API_KEY_ERROR_MESSAGE } from '../constants';
 
 let ai: GoogleGenAI | null = null;
-let currentApiKeyService: string | null = null; // Renamed to avoid conflict if 'currentApiKey' is used elsewhere
+let currentApiKeyService: string | null = null; 
 
 export class ApiKeyInvalidError extends Error {
   constructor(message: string) {
@@ -14,12 +13,18 @@ export class ApiKeyInvalidError extends Error {
   }
 }
 
+const ALL_SAFETY_SETTINGS_BLOCK_NONE = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
+
 export const initializeGeminiService = (apiKey: string) => {
   if (!apiKey) {
     console.error("Gemini Service: API Key is required for initialization.");
     ai = null;
     currentApiKeyService = null;
-    // No throw here, let getAiInstance handle it, so App can attempt init without crashing immediately
     return;
   }
   if (ai && currentApiKeyService === apiKey) { 
@@ -30,27 +35,20 @@ export const initializeGeminiService = (apiKey: string) => {
     currentApiKeyService = apiKey;
     console.log("Gemini Service Initialized");
   } catch (error: any) {
-    // This typically catches issues like malformed API key string structure, not necessarily validation against Google's servers.
-    // Actual validation often happens on the first API call.
     console.error("Gemini Service: Failed to initialize GoogleGenAI instance.", error);
     ai = null;
     currentApiKeyService = null;
-    // We won't throw here to allow the app to load and display an error state.
-    // getAiInstance will throw if 'ai' is still null when a call is attempted.
   }
 };
 
 const getAiInstance = (): GoogleGenAI => {
   if (!ai) {
-    // Attempt to re-initialize if process.env.API_KEY is available and different or ai is null
     const apiKeyFromEnv = process.env.API_KEY;
     if (apiKeyFromEnv && (apiKeyFromEnv !== currentApiKeyService || !ai) ) {
         console.log("Gemini Service: Attempting re-initialization from process.env.API_KEY");
         initializeGeminiService(apiKeyFromEnv);
     }
-    // After attempting re-initialization, check 'ai' again.
     if (!ai) {
-      // If still not initialized, it's likely due to a missing or fundamentally invalid key.
       throw new ApiKeyInvalidError(API_KEY_ERROR_MESSAGE);
     }
   }
@@ -87,7 +85,8 @@ export const fetchHourlySummary = async (): Promise<GenerateContentResponseText>
       model: GEMINI_TEXT_MODEL,
       contents: HOURLY_SUMMARY_PROMPT,
       config: {
-        tools: [{googleSearch: {}}] 
+        tools: [{googleSearch: {}}],
+        safetySettings: ALL_SAFETY_SETTINGS_BLOCK_NONE
       }
     });
 
@@ -115,7 +114,7 @@ export const fetchNewsArticles = async (): Promise<FetchNewsArticlesResponse> =>
     localAi = getAiInstance();
   } catch (error) {
     console.error("Error getting AI instance for news articles:", error);
-    return { articles: DEFAULT_NEWS_ARTICLES, sources: [] }; // Fallback to default
+    return { articles: DEFAULT_NEWS_ARTICLES, sources: [] }; 
   }
 
   try {
@@ -123,8 +122,8 @@ export const fetchNewsArticles = async (): Promise<FetchNewsArticlesResponse> =>
       model: GEMINI_TEXT_MODEL,
       contents: NEWS_FETCH_PROMPT,
       config: {
-        // Removed: responseMimeType: "application/json", // Cannot be used with googleSearch tool
-        tools: [{googleSearch: {}}] 
+        tools: [{googleSearch: {}}],
+        safetySettings: ALL_SAFETY_SETTINGS_BLOCK_NONE
       }
     });
 
@@ -161,7 +160,6 @@ export const fetchNewsArticles = async (): Promise<FetchNewsArticlesResponse> =>
     if (error.message && (error.message.includes('[GoogleGenerativeAI Error]: API key not valid') || error.message.includes("API_KEY_INVALID"))) {
          throw new ApiKeyInvalidError(API_KEY_ERROR_MESSAGE);
     }
-    // For other errors, or if parsing failed, return default.
     return { articles: DEFAULT_NEWS_ARTICLES, sources: [] };
   }
 };
@@ -173,13 +171,13 @@ export const initializeChatSession = async (
     tools?: Tool[],
     thinkingConfig?: GenerateContentParameters['config']['thinkingConfig']
     ): Promise<Chat> => {
-  const localAi = getAiInstance(); // This will throw ApiKeyInvalidError if key is bad
+  const localAi = getAiInstance(); 
   
   const config: GenerateContentParameters['config'] = {
       systemInstruction,
+      safetySettings: ALL_SAFETY_SETTINGS_BLOCK_NONE
   };
   if (tools) config.tools = tools;
-  // thinkingConfig is only available to gemini-2.5-flash-preview-04-17
   if (thinkingConfig && modelName === "gemini-2.5-flash-preview-04-17") { 
     config.thinkingConfig = thinkingConfig;
   }
@@ -195,7 +193,7 @@ export const initializeChatSession = async (
     if (error.message && (error.message.includes('[GoogleGenerativeAI Error]: API key not valid') || error.message.includes("API_KEY_INVALID"))) {
          throw new ApiKeyInvalidError(API_KEY_ERROR_MESSAGE);
     }
-    throw error; // Re-throw other errors
+    throw error; 
   }
 };
 
@@ -204,9 +202,11 @@ export const sendMessageToChatSdk = async (chat: Chat, messageText: string): Pro
   if (!chat) {
     throw new Error("Chat session not initialized. Cannot send message.");
   }
-  // No need to call getAiInstance() here, chat object is already created with it.
 
   try {
+    // Note: safetySettings for chat are typically set at session initialization.
+    // If they could be overridden per message, it would be in chat.sendMessage options.
+    // However, the common practice is session-level for chat.
     const result: GenerateContentResponse = await chat.sendMessage({ message: messageText });
     
     const sources: GroundingSource[] = result.candidates?.[0]?.groundingMetadata?.groundingChunks
@@ -222,6 +222,6 @@ export const sendMessageToChatSdk = async (chat: Chat, messageText: string): Pro
     if (error.message && (error.message.includes('[GoogleGenerativeAI Error]: API key not valid') || error.message.includes("API_KEY_INVALID"))) {
          throw new ApiKeyInvalidError(API_KEY_ERROR_MESSAGE);
     }
-    throw error; // Re-throw other errors
+    throw error; 
   }
 };
